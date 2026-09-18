@@ -1,0 +1,6 @@
+*
+!.gitignore
+!README.md
+!assets/
+assets/*
+!assets/logo.svg
