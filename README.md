@@ -7,6 +7,12 @@
 
 <p align="center">Connection and account management for Windows.</p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows_x64-19478f" alt="Platform: Windows x64">
+  <img src="https://img.shields.io/badge/setup-EXE_installer-19478f" alt="Setup: EXE installer">
+  <a href="https://github.com/ozimellow/kin-clinet/releases"><img src="https://img.shields.io/badge/download-coming_soon-687386" alt="Download: coming soon"></a>
+</p>
+
 Kin brings your connection controls, data usage and account details into one compact window. Import the token from your provider to get started.
 
 ## Features
@@ -27,7 +33,7 @@ You can manage your token and account from the account menu. Usage reflects the 
 
 ## Download
 
-The Windows installer is coming soon. Downloads will be available from [Releases](https://github.com/ozimellow/kin-clinet/releases).
+The Windows installer is coming soon. Download the `.exe` from [Releases](https://github.com/ozimellow/kin-clinet/releases) when it becomes available, run the installer, and open Kin.
 
 ## Support
 
