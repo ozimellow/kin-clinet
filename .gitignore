@@ -1,0 +1,14 @@
+*
+!README.md
+!LICENSE
+!logo.svg
+!logo-dark.svg
+!.gitignore
+!.gitattributes
+!.github/
+!.github/**
+!.github/scripts/verify-release.py
+!releases/
+!releases/v*/
+!releases/v*/release.md
+!releases/v*/release.json
