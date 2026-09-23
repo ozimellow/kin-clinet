@@ -9,7 +9,7 @@
 <p align="center">A focused app for managing your connection and account.</p>
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Proprietary-64748b?style=flat-square" alt="Proprietary licence"></a>
-  <img src="https://img.shields.io/badge/Windows_x64-Coming_soon-64748b?style=flat-square" alt="Windows x64 coming soon">
+  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Windows_x64&color=22c55e&style=flat-square" alt="Latest Windows x64 release"></a>
   <img src="https://img.shields.io/badge/macOS-Coming_soon-64748b?style=flat-square" alt="macOS coming soon">
   <img src="https://img.shields.io/badge/Android-Coming_soon-64748b?style=flat-square" alt="Android coming soon">
 </p>
@@ -23,7 +23,7 @@ Kin brings connection controls, account information and live data usage into one
 
 ## Get started
 
-No download is currently available. Future versions will appear in [Releases](https://github.com/ozimellow/kin-clinet/releases).
+Published versions are available in [Releases](https://github.com/ozimellow/kin-clinet/releases).
 
 Download the Windows ZIP, extract the complete folder and open **kin-clinet.exe**. Complete the one-time setup, add your connection token and select **Connect**.
 

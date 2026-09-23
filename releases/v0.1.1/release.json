@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "tag": "v0.1.1",
+  "manualAcceptance": false,
+  "assets": {
+    "kin-clinet-0.1.1-windows-x64.zip": "8bdbaf3ad2c8ad3c336d1196a9d0b81e038067148635faf4a6ebc376245b181a",
+    "SHA256SUMS": "f4432af08ad9e179e9cd296add1735725ca12a55f6af60eabbbd7a237167620e",
+    "SHA256SUMS.sig": "f4d8d65f8e862c0b8d93be2a8115237ced94e242dcbfa0d8c4c5af007a3e7c6e",
+    "release-signing-key.pub": "ac206530d77b8b80ceadfc487a39dafd7f474cd3258c6f3713aa5f621a291732",
+    "allowed_signers": "a8225e435deee53acfbd8580a648732b64c1f0a2dab189799f9360d2059084ed"
+  },
+  "reviewedPackageSha256": "8bdbaf3ad2c8ad3c336d1196a9d0b81e038067148635faf4a6ebc376245b181a",
+  "reviewedNotesSha256": "a4dede35decc658a62c1f08b690d9a130a7b2f9ab6a3144b5928cbfc1f0e0e9d"
+}

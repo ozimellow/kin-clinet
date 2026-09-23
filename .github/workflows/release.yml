@@ -11,6 +11,11 @@ on:
         description: Exact reviewed and signed public commit
         required: true
         type: string
+      approve_publication:
+        description: Approve this exact version's ZIP and release notes for publication
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -30,6 +35,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_VERSION: ${{ inputs.version }}
       EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+      APPROVE_PUBLICATION: ${{ inputs.approve_publication }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -39,6 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$APPROVE_PUBLICATION" = true
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$EXPECTED_COMMIT" =~ ^[a-f0-9]{40}$ ]]
           test "$GITHUB_SHA" = "$EXPECTED_COMMIT"
@@ -60,6 +67,29 @@ jobs:
           paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD']).decode().splitlines()
           assert all(p in allowed or re.fullmatch(r'releases/v\d+\.\d+\.\d+/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
           PY
+      - name: Record this run's approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, shutil
+          assert os.environ['APPROVE_PUBLICATION'] == 'true'
+          source = pathlib.Path('releases') / ('v' + os.environ['RELEASE_VERSION'])
+          metadata = json.loads((source / 'release.json').read_text())
+          assert metadata['tag'] == 'v' + os.environ['RELEASE_VERSION']
+          assert metadata['manualAcceptance'] is False
+          metadata['manualAcceptance'] = True
+          approved = pathlib.Path(os.environ['RUNNER_TEMP']) / 'approved-release'
+          approved.mkdir()
+          (approved / 'release.json').write_text(json.dumps(metadata) + '\n')
+          shutil.copyfile(source / 'release.md', approved / 'release.md')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Approved for publication by @' + os.environ['GITHUB_ACTOR'] + '\n\n')
+              summary.write('Version: `' + metadata['tag'] + '`\n\n')
+              summary.write('Commit: `' + os.environ['GITHUB_SHA'] + '`\n\n')
+              summary.write('ZIP SHA-256: `' + metadata['reviewedPackageSha256'] + '`\n\n')
+              summary.write('Notes SHA-256: `' + metadata['reviewedNotesSha256'] + '`\n')
+          PY
       - name: Verify staged download
         shell: bash
         run: |
@@ -72,7 +102,7 @@ jobs:
           assert r['tagName'] == 'v' + os.environ['RELEASE_VERSION']
           PY
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/candidate"
-          python3 .github/scripts/verify-release.py "releases/v$RELEASE_VERSION/release.json" "$RUNNER_TEMP/candidate"
+          python3 .github/scripts/verify-release.py "$RUNNER_TEMP/approved-release/release.json" "$RUNNER_TEMP/candidate"
       - name: Publish the verified release
         shell: bash
         run: |
@@ -83,5 +113,5 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/published"
-          python3 .github/scripts/verify-release.py "releases/v$RELEASE_VERSION/release.json" "$RUNNER_TEMP/published"
+          python3 .github/scripts/verify-release.py "$RUNNER_TEMP/approved-release/release.json" "$RUNNER_TEMP/published"
           gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName
