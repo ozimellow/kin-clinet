@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Accepted release version (for example 0.1.0)
+        description: Accepted release version (for example 0.0.3-dev.1 or 0.0.3)
         required: true
         type: string
       expected_commit:
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'ozimellow/kin-clinet' && github.actor == 'ozimellow' && github.ref == 'refs/heads/main'
+    if: github.repository == 'ozimellow/kin-clinet' && github.actor == 'ozimellow' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -46,7 +46,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$APPROVE_PUBLICATION" = true
-          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev\.[1-9][0-9]*)?$ ]]
+          if [[ "$RELEASE_VERSION" == *-dev.* ]]; then
+            test "$GITHUB_REF" = refs/heads/development
+          else
+            test "$GITHUB_REF" = refs/heads/main
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)" = "$EXPECTED_COMMIT"
           [[ "$EXPECTED_COMMIT" =~ ^[a-f0-9]{40}$ ]]
           test "$GITHUB_SHA" = "$EXPECTED_COMMIT"
           test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
@@ -65,7 +71,7 @@ jobs:
                      '.github/workflows/release.yml', '.github/signers', '.github/scripts/verify-release.py'}
           import re
           paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD']).decode().splitlines()
-          assert all(p in allowed or re.fullmatch(r'releases/v\d+\.\d+\.\d+/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
+          assert all(p in allowed or re.fullmatch(r'releases/v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
           PY
       - name: Record this run's approval
         shell: bash
@@ -94,11 +100,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName > "$RUNNER_TEMP/release.json"
+          gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName,targetCommitish > "$RUNNER_TEMP/release.json"
           python3 - <<'PY'
           import json, os
           r = json.load(open(os.environ['RUNNER_TEMP'] + '/release.json'))
-          assert r['isDraft'] is True and r['isPrerelease'] is False
+          assert r['isDraft'] is True
+          assert r['isPrerelease'] == ('-dev.' in os.environ['RELEASE_VERSION'])
+          assert r['targetCommitish'] == os.environ['EXPECTED_COMMIT']
           assert r['tagName'] == 'v' + os.environ['RELEASE_VERSION']
           PY
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/candidate"
@@ -107,11 +115,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --title "v$RELEASE_VERSION" --notes-file "releases/v$RELEASE_VERSION/release.md"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)" = "$EXPECTED_COMMIT"
+          if [[ "$RELEASE_VERSION" == *-dev.* ]]; then
+            gh release edit "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=true --latest=false --title "v$RELEASE_VERSION" --notes-file "releases/v$RELEASE_VERSION/release.md"
+          else
+            gh release edit "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --title "v$RELEASE_VERSION" --notes-file "releases/v$RELEASE_VERSION/release.md"
+          fi
       - name: Verify published downloads
         shell: bash
         run: |
           set -euo pipefail
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/published"
           python3 .github/scripts/verify-release.py "$RUNNER_TEMP/approved-release/release.json" "$RUNNER_TEMP/published"
-          gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName
+          gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,tagName,targetCommitish > "$RUNNER_TEMP/published-release.json"
+          python3 - <<'PY'
+          import json, os
+          r = json.load(open(os.environ['RUNNER_TEMP'] + '/published-release.json'))
+          assert r['isDraft'] is False
+          assert r['isPrerelease'] == ('-dev.' in os.environ['RELEASE_VERSION'])
+          assert r['tagName'] == 'v' + os.environ['RELEASE_VERSION']
+          assert r['targetCommitish'] == os.environ['EXPECTED_COMMIT']
+          print(r['url'])
+          PY

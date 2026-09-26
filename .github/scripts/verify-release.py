@@ -35,11 +35,12 @@ def verify(manifest_path, directory):
     manifest = parse(Path(manifest_path).read_bytes())
     require(set(manifest) == {"schemaVersion", "tag", "manualAcceptance", "assets", "reviewedPackageSha256", "reviewedNotesSha256"}, "Unreviewed release metadata")
     require(manifest["schemaVersion"] == 1 and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
-    require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", manifest["tag"]), "Invalid release tag")
+    require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?", manifest["tag"]), "Invalid release tag")
     assets = manifest["assets"]
     archives = [name for name in assets if safe_path(name) and "/" not in name and name.endswith(".zip")]
     require(len(archives) == 1, "Exactly one reviewed archive is required")
     name = archives[0]
+    require(name == "kin-clinet-" + manifest["tag"][1:] + "-windows-x64.zip", "Archive version mismatch")
     require(set(assets) == {name, "SHA256SUMS", "SHA256SUMS.sig", "release-signing-key.pub", "allowed_signers"}, "Unexpected release assets")
     require(all(re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in assets.values()), "Invalid asset digest")
     require(manifest["reviewedPackageSha256"] == assets[name], "Exact package content review is required")
