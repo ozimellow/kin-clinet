@@ -29,11 +29,11 @@ Download the Windows ZIP, extract the complete folder and open **kin-clinet.exe*
 
 ## Updates
 
-Use **Settings > About** to choose **Stable** or **Development**, then select **Check now**. Version 0.0.3-dev.1 and newer can download, verify and install an update in place with **Update and restart**. Your saved account is kept.
+Use **Settings > About** to choose **Stable** or **Development**, then select **Check now**. Stable offers stable releases; Development also offers newer previews and receives stable promotions. Version 0.0.3-dev.1 and newer can download, verify and install an update in place with **Update and restart**. Your saved account is kept.
 
 Version 0.0.3-dev.1 begins the current version sequence. When moving from the retired 0.1.1 version, download and extract the new ZIP once, quit the old app and open the new version. This one-time version change is not offered as an automatic downgrade.
 
-The current preview is [v0.0.3-dev.1](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.3-dev.1) for Windows x64.
+The current stable release is [v0.0.3](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.3) for Windows x64. [Development releases](https://github.com/ozimellow/kin-clinet/releases) are available separately.
 
 To remove Kin and its saved data, choose **Settings > About > Uninstall Kin**.
 
