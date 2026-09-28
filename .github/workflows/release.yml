@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       approve_publication:
-        description: Approve this exact version's ZIP and release notes for publication
+        description: Approve this exact version's package and release notes for publication
         required: true
         default: false
         type: boolean
@@ -93,7 +93,7 @@ jobs:
               summary.write('Approved for publication by @' + os.environ['GITHUB_ACTOR'] + '\n\n')
               summary.write('Version: `' + metadata['tag'] + '`\n\n')
               summary.write('Commit: `' + os.environ['GITHUB_SHA'] + '`\n\n')
-              summary.write('ZIP SHA-256: `' + metadata['reviewedPackageSha256'] + '`\n\n')
+              summary.write('Package SHA-256: `' + metadata['reviewedPackageSha256'] + '`\n\n')
               summary.write('Notes SHA-256: `' + metadata['reviewedNotesSha256'] + '`\n')
           PY
       - name: Verify staged download

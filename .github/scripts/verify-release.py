@@ -1,6 +1,7 @@
 """Generic verification of signed, reviewed release archives."""
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
@@ -31,16 +32,58 @@ def parse(data):
 def safe_path(value):
     return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", value) and all(p not in (".", "..") for p in value.split("/"))
 
+ANDROID_CERTIFICATE = "1b366e9e20fd45af9608d4b1e9b30ae709c6bcd87bd7cdaaf89c0bd5dc881823"
+
+def verify_android(path, manifest):
+    identity = manifest["android"]
+    require(isinstance(identity, dict) and set(identity) == {"certificateSha256", "versionCode", "inventorySha256"}, "Unknown Android metadata")
+    require(identity["certificateSha256"] == ANDROID_CERTIFICATE, "Unexpected Android publisher")
+    require(type(identity["versionCode"]) is int and 0 < identity["versionCode"] <= 2100000000, "Invalid Android version code")
+    with zipfile.ZipFile(path) as archive:
+        entries = archive.infolist()
+        require(not archive.comment and 1 < len(entries) <= 10000 and sum(i.file_size for i in entries) < MAX, "Invalid APK size")
+        require(len({i.filename.casefold() for i in entries}) == len(entries), "Duplicate APK entry")
+        inventory = []
+        for item in entries:
+            require(safe_path(item.filename) and not item.is_dir() and not item.comment, "Invalid APK path")
+            require(not stat.S_ISLNK(item.external_attr >> 16) and not item.flag_bits & 1, "Unsupported APK entry")
+            require(not item.filename.lower().endswith((".java", ".kt", ".go", ".cs", ".map", ".pdb", ".jks", ".p12", ".pem")), "Unexpected source or signing material")
+            inventory.append({"path": item.filename, "sha256": digest(archive.read(item))})
+        require({"AndroidManifest.xml", "resources.arsc", "classes.dex"}.issubset({i.filename for i in entries}), "Incomplete Android package")
+        inventory.sort(key=lambda row: row["path"])
+        encoded = json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()
+        require(digest(encoded) == identity["inventorySha256"], "APK content review mismatch")
+    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    require(bool(sdk), "Android SDK is required")
+    build_tools = Path(sdk) / "build-tools" / "36.0.0"
+    signer = build_tools / ("apksigner.bat" if os.name == "nt" else "apksigner")
+    result = subprocess.run([str(signer), "verify", "--verbose", "--print-certs", str(path)], capture_output=True, text=True, timeout=60)
+    require(result.returncode == 0, "APK signature failed")
+    certificates = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([a-f0-9]{64})", result.stdout)
+    require(certificates == [ANDROID_CERTIFICATE], "Unexpected APK signer")
+    require("Verified using v3 scheme (APK Signature Scheme v3): true" in result.stdout, "APK v3 signature required")
+    aapt = build_tools / ("aapt.exe" if os.name == "nt" else "aapt")
+    result = subprocess.run([str(aapt), "dump", "badging", str(path)], capture_output=True, text=True, timeout=30, encoding="utf-8")
+    require(result.returncode == 0, "APK identity could not be read")
+    package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", result.stdout, re.M)
+    require(package is not None and package.groups() == ("com.kin.client", str(identity["versionCode"]), manifest["tag"][1:]), "APK identity mismatch")
+    require("application-debuggable" not in result.stdout, "Debug APK is forbidden")
+    require(re.search(r"^native-code: 'arm64-v8a'\s*$", result.stdout, re.M) is not None, "Unexpected APK architecture")
+    align = build_tools / ("zipalign.exe" if os.name == "nt" else "zipalign")
+    result = subprocess.run([str(align), "-c", "-P", "16", "4", str(path)], capture_output=True, timeout=30)
+    require(result.returncode == 0, "APK alignment failed")
+
 def verify(manifest_path, directory):
     manifest = parse(Path(manifest_path).read_bytes())
-    require(set(manifest) == {"schemaVersion", "tag", "manualAcceptance", "assets", "reviewedPackageSha256", "reviewedNotesSha256"}, "Unreviewed release metadata")
-    require(manifest["schemaVersion"] == 1 and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
+    android = manifest.get("schemaVersion") == 2
+    require(set(manifest) == ({"schemaVersion", "tag", "manualAcceptance", "assets", "reviewedPackageSha256", "reviewedNotesSha256"} | ({"android"} if android else set())), "Unreviewed release metadata")
+    require(type(manifest["schemaVersion"]) is int and manifest["schemaVersion"] in (1, 2) and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
     require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?", manifest["tag"]), "Invalid release tag")
     assets = manifest["assets"]
-    archives = [name for name in assets if safe_path(name) and "/" not in name and name.endswith(".zip")]
+    archives = [name for name in assets if safe_path(name) and "/" not in name and name.endswith(".apk" if android else ".zip")]
     require(len(archives) == 1, "Exactly one reviewed archive is required")
     name = archives[0]
-    require(name == "kin-clinet-" + manifest["tag"][1:] + "-windows-x64.zip", "Archive version mismatch")
+    require(name == "kin-clinet-" + manifest["tag"][1:] + ("-android-arm64.apk" if android else "-windows-x64.zip"), "Archive version mismatch")
     require(set(assets) == {name, "SHA256SUMS", "SHA256SUMS.sig", "release-signing-key.pub", "allowed_signers"}, "Unexpected release assets")
     require(all(re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in assets.values()), "Invalid asset digest")
     require(manifest["reviewedPackageSha256"] == assets[name], "Exact package content review is required")
@@ -58,6 +101,10 @@ def verify(manifest_path, directory):
     require((directory / "SHA256SUMS").read_bytes() == checksums, "Unexpected checksum statement")
     signature = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(directory / "allowed_signers"), "-I", "publisher", "-n", "release", "-s", str(directory / "SHA256SUMS.sig")], input=checksums, capture_output=True, timeout=20)
     require(signature.returncode == 0, "Release signature failed")
+    if android:
+        verify_android(directory / name, manifest)
+        print("PASS: reviewed Android package and signatures verified")
+        return
     prefix = name[:-4] + "/"
     with zipfile.ZipFile(directory / name) as archive:
         entries = archive.infolist()
