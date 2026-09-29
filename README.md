@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Proprietary-64748b?style=flat-square" alt="Proprietary licence"></a>
   <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Windows_x64&color=22c55e&style=flat-square" alt="Latest Windows x64 release"></a>
   <img src="https://img.shields.io/badge/macOS-Coming_soon-64748b?style=flat-square" alt="macOS coming soon">
-  <a href="https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.5"><img src="https://img.shields.io/badge/Android-ARM64-22c55e?style=flat-square" alt="Android ARM64"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Android_ARM64&color=22c55e&style=flat-square" alt="Latest Android ARM64 release"></a>
 </p>
 <p align="center">
   <a href="https://github.com/ozimellow/kin-clinet/releases"><strong>Download</strong></a>
