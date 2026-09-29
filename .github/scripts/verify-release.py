@@ -82,7 +82,7 @@ def verify_windows(path, name, manifest):
         require(len({i.filename.casefold() for i in entries}) == len(entries), "Duplicate archive entry")
         for item in entries:
             require(not item.comment and not item.extra, "Unreviewed archive metadata")
-            require(item.filename.startswith(prefix) and safe_path(item.filename[len(prefix):]), "Unexpected archive path")
+            require(item.orig_filename == item.filename and item.filename.startswith(prefix) and safe_path(item.filename[len(prefix):]), "Unexpected archive path")
             require(not item.is_dir() and not stat.S_ISLNK(item.external_attr >> 16) and not item.flag_bits & 1, "Unsupported archive entry")
         data = {i.filename[len(prefix):]: archive.read(i) for i in entries}
     inventory_name = "application-manifest.json"
