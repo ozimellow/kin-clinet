@@ -14,7 +14,7 @@
     "kin-clinet-0.0.5-android-arm64.apk": "1c9ab7e98464098368b72a9f19fe0b031eeba3626aebddf43822c3a3156ffa91",
     "kin-clinet-0.0.5-windows-x64.zip": "9033759de059c6eddcecb3d85a2b480f1fd9e58f4e8157cecb414673fba8cae9"
   },
-  "reviewedNotesSha256": "a22c44e4a9f973b4baddd4aae15021694fcbc9b3e676f59c021c6b477a7d2bcf",
+  "reviewedNotesSha256": "1b0e7ec475d56e8829aee56c2e7e654f921b0042776f760ed052eb9a54c2b9b6",
   "android": {
     "certificateSha256": "1b366e9e20fd45af9608d4b1e9b30ae709c6bcd87bd7cdaaf89c0bd5dc881823",
     "versionCode": 50004,

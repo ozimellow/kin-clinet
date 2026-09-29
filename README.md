@@ -9,9 +9,9 @@
 <p align="center">A focused app for managing your connection and account.</p>
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Proprietary-64748b?style=flat-square" alt="Proprietary licence"></a>
-  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Windows_x64&color=22c55e&style=flat-square" alt="Latest Windows x64 release"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Windows_x64&color=22c55e&style=flat-square&cacheSeconds=300" alt="Latest Windows x64 release"></a>
   <img src="https://img.shields.io/badge/macOS-Coming_soon-64748b?style=flat-square" alt="macOS coming soon">
-  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Android_ARM64&color=22c55e&style=flat-square" alt="Latest Android ARM64 release"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Android_ARM64&color=22c55e&style=flat-square&cacheSeconds=300" alt="Latest Android ARM64 release"></a>
 </p>
 <p align="center">
   <a href="https://github.com/ozimellow/kin-clinet/releases"><strong>Download</strong></a>
@@ -19,7 +19,7 @@
   &nbsp; &middot; &nbsp; <a href="https://github.com/ozimellow/kin-clinet/issues">Support</a>
 </p>
 
-Kin brings connection controls, account information and live data usage into one compact interface, with light, dark and system themes. Accounts that offer locations can browse countries, cities and servers while connected.
+Kin client for Windows and Android.
 
 ## Download
 
@@ -33,9 +33,7 @@ Add your connection token to get started.
 
 ## Updates
 
-Open **Settings > About**, choose **Stable** or **Development**, then check for updates. Kin downloads the package for your device and preserves your saved account. Android asks you to confirm installation.
-
-For Android v0.0.4-dev.5, install the current APK over the existing app without uninstalling. Later updates can be downloaded in Kin.
+Open **Settings > About** to check for updates.
 
 ## Support and licence
 
