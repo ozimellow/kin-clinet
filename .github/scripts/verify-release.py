@@ -118,17 +118,27 @@ def verify_windows(path, name, manifest):
 
 def verify(manifest_path, directory):
     manifest = parse(Path(manifest_path).read_bytes())
-    bundle = manifest.get("schemaVersion") == 3
-    android = manifest.get("schemaVersion") in (2, 3)
+    recovery = manifest.get("schemaVersion") == 4
+    bundle = manifest.get("schemaVersion") in (3, 4)
+    android = manifest.get("schemaVersion") in (2, 3, 4)
     review_field = "reviewedPackages" if bundle else "reviewedPackageSha256"
-    require(set(manifest) == ({"schemaVersion", "tag", "manualAcceptance", "assets", review_field, "reviewedNotesSha256"} | ({"android"} if android else set())), "Unreviewed release metadata")
-    require(type(manifest["schemaVersion"]) is int and manifest["schemaVersion"] in (1, 2, 3) and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
+    require(set(manifest) == ({"schemaVersion", "tag", "manualAcceptance", "assets", review_field, "reviewedNotesSha256"} | ({"android"} if android else set()) | ({"stableRecovery"} if recovery else set())), "Unreviewed release metadata")
+    require(type(manifest["schemaVersion"]) is int and manifest["schemaVersion"] in (1, 2, 3, 4) and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
     require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?", manifest["tag"]), "Invalid release tag")
     assets = manifest["assets"]
     require(isinstance(assets, dict), "Invalid assets")
     windows_name = "kin-clinet-" + manifest["tag"][1:] + "-windows-x64.zip"
     android_name = "kin-clinet-" + manifest["tag"][1:] + "-android-arm64.apk"
     names = [windows_name, android_name] if bundle else [android_name if android else windows_name]
+    if recovery:
+        entry = manifest["stableRecovery"]
+        require(isinstance(entry, dict) and set(entry) == {"version", "android"}, "Unknown recovery metadata")
+        require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", entry["version"]), "Recovery must be Stable")
+        require("-dev." in manifest["tag"], "Recovery belongs to a preview release")
+        require(tuple(map(int, entry["version"].split("."))) < tuple(map(int, manifest["tag"][1:].split("-")[0].split("."))), "Recovery must restore an earlier stable series")
+        require(entry["android"]["versionCode"] == manifest["android"]["versionCode"], "Channel pair must share its installation generation")
+        recovery_name = "kin-clinet-" + entry["version"] + "-android-arm64-recovery-" + str(entry["android"]["versionCode"]) + ".apk"
+        names.append(recovery_name)
     name = names[0]
     require(set(assets) == set(names) | {"SHA256SUMS", "SHA256SUMS.sig", "release-signing-key.pub", "allowed_signers"}, "Archive version mismatch or unexpected release assets")
     require(all(re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in assets.values()), "Invalid asset digest")
@@ -150,6 +160,8 @@ def verify(manifest_path, directory):
     require(signature.returncode == 0, "Release signature failed")
     if android:
         verify_android(directory / android_name, manifest)
+    if recovery:
+        verify_android(directory / recovery_name, {"tag": "v" + entry["version"], "android": entry["android"]})
     if not android or bundle:
         verify_windows(directory / windows_name, windows_name, manifest)
     print("PASS: reviewed platform packages and signatures verified")
