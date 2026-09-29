@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "tag": "v0.0.5-dev.1",
+  "manualAcceptance": false,
+  "assets": {
+    "allowed_signers": "54391b9a0bdd8e95c55b2df5fad3eb5bff5dd6b61d94afdef0a2a8b9744a6f97",
+    "kin-clinet-0.0.5-dev.1-android-arm64.apk": "d81e7539b3c731d76821ec7143270bbaa9c169806ad58ae64fe1343a3bc28b9f",
+    "kin-clinet-0.0.5-dev.1-windows-x64.zip": "8034778c8b3c1d0c29f8ed33c14e5f3f3cf9fd9ea92f2cfe1a68b545dc82a4b0",
+    "release-signing-key.pub": "c7cb54a0a7601cea800d37fd259da2dab3228298577112dafc9b4c7df30356a1",
+    "SHA256SUMS": "a374e62d12d4f5c2c22b803fe5491bf5fd9f8f2385f5acc5c82ed74b2e47e0c8",
+    "SHA256SUMS.sig": "897fca87dc8dd5d4d7d8b7d38ffc9e23eb1453c45b1629d35f14e27cde3693a8"
+  },
+  "reviewedPackages": {
+    "kin-clinet-0.0.5-dev.1-windows-x64.zip": "8034778c8b3c1d0c29f8ed33c14e5f3f3cf9fd9ea92f2cfe1a68b545dc82a4b0",
+    "kin-clinet-0.0.5-dev.1-android-arm64.apk": "d81e7539b3c731d76821ec7143270bbaa9c169806ad58ae64fe1343a3bc28b9f"
+  },
+  "reviewedNotesSha256": "02eca778bd740ffe90e0bfac70e6c9147dd5ddc45ad34356aee6ec7adcf6f238",
+  "android": {
+    "certificateSha256": "1b366e9e20fd45af9608d4b1e9b30ae709c6bcd87bd7cdaaf89c0bd5dc881823",
+    "versionCode": 50002,
+    "inventorySha256": "c20cc6bdd273e010dd78f08a4cdec6c168eb88bcc83d049a43f62d3f5e668818"
+  }
+}

@@ -93,7 +93,9 @@ jobs:
               summary.write('Approved for publication by @' + os.environ['GITHUB_ACTOR'] + '\n\n')
               summary.write('Version: `' + metadata['tag'] + '`\n\n')
               summary.write('Commit: `' + os.environ['GITHUB_SHA'] + '`\n\n')
-              summary.write('Package SHA-256: `' + metadata['reviewedPackageSha256'] + '`\n\n')
+              packages = metadata.get('reviewedPackages', {'package': metadata.get('reviewedPackageSha256')})
+              for name, checksum in sorted(packages.items()):
+                  summary.write(name + ' SHA-256: `' + checksum + '`\n\n')
               summary.write('Notes SHA-256: `' + metadata['reviewedNotesSha256'] + '`\n')
           PY
       - name: Verify staged download

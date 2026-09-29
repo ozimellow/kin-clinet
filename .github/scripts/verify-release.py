@@ -73,40 +73,9 @@ def verify_android(path, manifest):
     result = subprocess.run([str(align), "-c", "-P", "16", "4", str(path)], capture_output=True, timeout=30)
     require(result.returncode == 0, "APK alignment failed")
 
-def verify(manifest_path, directory):
-    manifest = parse(Path(manifest_path).read_bytes())
-    android = manifest.get("schemaVersion") == 2
-    require(set(manifest) == ({"schemaVersion", "tag", "manualAcceptance", "assets", "reviewedPackageSha256", "reviewedNotesSha256"} | ({"android"} if android else set())), "Unreviewed release metadata")
-    require(type(manifest["schemaVersion"]) is int and manifest["schemaVersion"] in (1, 2) and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
-    require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?", manifest["tag"]), "Invalid release tag")
-    assets = manifest["assets"]
-    archives = [name for name in assets if safe_path(name) and "/" not in name and name.endswith(".apk" if android else ".zip")]
-    require(len(archives) == 1, "Exactly one reviewed archive is required")
-    name = archives[0]
-    require(name == "kin-clinet-" + manifest["tag"][1:] + ("-android-arm64.apk" if android else "-windows-x64.zip"), "Archive version mismatch")
-    require(set(assets) == {name, "SHA256SUMS", "SHA256SUMS.sig", "release-signing-key.pub", "allowed_signers"}, "Unexpected release assets")
-    require(all(re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in assets.values()), "Invalid asset digest")
-    require(manifest["reviewedPackageSha256"] == assets[name], "Exact package content review is required")
-    require(assets[name] != "a78fb1794fd4f80adc5f54534240f8de1f9fd3cfc18b711cc3af86047e1e7ff1", "Withdrawn package")
-    require(digest(Path(manifest_path).with_name("release.md").read_bytes()) == manifest["reviewedNotesSha256"], "Exact release notes review is required")
-    directory = Path(directory)
-    require(not directory.is_symlink() and {p.name for p in directory.iterdir()} == set(assets), "Unexpected asset directory")
-    for asset, expected in assets.items():
-        p = directory / asset
-        require(p.is_file() and not p.is_symlink() and p.stat().st_size <= MAX, "Invalid release asset")
-        require(digest(p.read_bytes()) == expected, "Release asset digest mismatch")
-    require((directory / "release-signing-key.pub").read_text().strip() == KEY, "Unexpected release key")
-    require((directory / "allowed_signers").read_text().strip() == 'publisher namespaces="release" ' + KEY, "Unexpected signer")
-    checksums = (assets[name] + "  " + name + "\n").encode()
-    require((directory / "SHA256SUMS").read_bytes() == checksums, "Unexpected checksum statement")
-    signature = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(directory / "allowed_signers"), "-I", "publisher", "-n", "release", "-s", str(directory / "SHA256SUMS.sig")], input=checksums, capture_output=True, timeout=20)
-    require(signature.returncode == 0, "Release signature failed")
-    if android:
-        verify_android(directory / name, manifest)
-        print("PASS: reviewed Android package and signatures verified")
-        return
+def verify_windows(path, name, manifest):
     prefix = name[:-4] + "/"
-    with zipfile.ZipFile(directory / name) as archive:
+    with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
         require(not archive.comment, "Archive comments are forbidden")
         require(1 < len(entries) <= 64 and sum(i.file_size for i in entries) < MAX, "Invalid archive size")
@@ -144,7 +113,47 @@ def verify(manifest_path, directory):
         require(len(set(paths)) == len(paths) and all(q in binaries for q in paths), "Invalid resource inventory")
         for row, q in zip(rows, paths):
             require(digest(data[q]) == row["sha256"], "Resource digest mismatch")
-    print("PASS: reviewed release archive and signature verified")
+
+
+
+def verify(manifest_path, directory):
+    manifest = parse(Path(manifest_path).read_bytes())
+    bundle = manifest.get("schemaVersion") == 3
+    android = manifest.get("schemaVersion") in (2, 3)
+    review_field = "reviewedPackages" if bundle else "reviewedPackageSha256"
+    require(set(manifest) == ({"schemaVersion", "tag", "manualAcceptance", "assets", review_field, "reviewedNotesSha256"} | ({"android"} if android else set())), "Unreviewed release metadata")
+    require(type(manifest["schemaVersion"]) is int and manifest["schemaVersion"] in (1, 2, 3) and manifest["manualAcceptance"] is True, "Exact candidate acceptance is required")
+    require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?", manifest["tag"]), "Invalid release tag")
+    assets = manifest["assets"]
+    require(isinstance(assets, dict), "Invalid assets")
+    windows_name = "kin-clinet-" + manifest["tag"][1:] + "-windows-x64.zip"
+    android_name = "kin-clinet-" + manifest["tag"][1:] + "-android-arm64.apk"
+    names = [windows_name, android_name] if bundle else [android_name if android else windows_name]
+    name = names[0]
+    require(set(assets) == set(names) | {"SHA256SUMS", "SHA256SUMS.sig", "release-signing-key.pub", "allowed_signers"}, "Archive version mismatch or unexpected release assets")
+    require(all(re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in assets.values()), "Invalid asset digest")
+    reviewed = manifest[review_field]
+    require(reviewed == {n: assets[n] for n in names} if bundle else reviewed == assets[name], "Exact package content review is required")
+    require(all(assets[n] != "a78fb1794fd4f80adc5f54534240f8de1f9fd3cfc18b711cc3af86047e1e7ff1" for n in names), "Withdrawn package")
+    require(digest(Path(manifest_path).with_name("release.md").read_bytes()) == manifest["reviewedNotesSha256"], "Exact release notes review is required")
+    directory = Path(directory)
+    require(not directory.is_symlink() and {p.name for p in directory.iterdir()} == set(assets), "Unexpected asset directory")
+    for asset, expected in assets.items():
+        p = directory / asset
+        require(p.is_file() and not p.is_symlink() and p.stat().st_size <= MAX, "Invalid release asset")
+        require(digest(p.read_bytes()) == expected, "Release asset digest mismatch")
+    require((directory / "release-signing-key.pub").read_text().strip() == KEY, "Unexpected release key")
+    require((directory / "allowed_signers").read_text().strip() == 'publisher namespaces="release" ' + KEY, "Unexpected signer")
+    checksums = "".join(assets[n] + "  " + n + "\n" for n in sorted(names)).encode()
+    require((directory / "SHA256SUMS").read_bytes() == checksums, "Unexpected checksum statement")
+    signature = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(directory / "allowed_signers"), "-I", "publisher", "-n", "release", "-s", str(directory / "SHA256SUMS.sig")], input=checksums, capture_output=True, timeout=20)
+    require(signature.returncode == 0, "Release signature failed")
+    if android:
+        verify_android(directory / android_name, manifest)
+    if not android or bundle:
+        verify_windows(directory / windows_name, windows_name, manifest)
+    print("PASS: reviewed platform packages and signatures verified")
+
 
 if __name__ == "__main__":
     try:
