@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "issuedAt": "2026-10-09T17:30:28.287Z",
+  "minimumVersions": {
+    "windows": "0.0.6",
+    "android": "0.0.6"
+  },
+  "reason": "Update to Kin 0.0.6 before connecting."
+}
