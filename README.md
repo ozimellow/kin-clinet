@@ -8,8 +8,8 @@
 <h1 align="center">Your connection. Simply managed.</h1>
 <p align="center">A focused app for managing your connection and account.</p>
 <p align="center">
-  <a href="https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.5"><img src="https://img.shields.io/badge/stable-v0.0.5-16a34a?style=flat&amp;labelColor=374151" alt="Stable v0.0.5"></a>
-  <a href="https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6-dev.1"><img src="https://img.shields.io/badge/development-v0.0.6--dev.1-d97706?style=flat&amp;labelColor=374151" alt="Development v0.0.6-dev.1"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6"><img src="https://img.shields.io/badge/stable-v0.0.6-16a34a?style=flat&amp;labelColor=374151" alt="Stable v0.0.6"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6-dev.1"><img src="https://img.shields.io/badge/development-v0.0.6--dev.1-d97706?style=flat&amp;labelColor=374151" alt="Development v0.0.6-dev.1 (superseded)"></a>
 </p>
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Proprietary-64748b?style=flat-square" alt="Proprietary licence"></a>
@@ -27,9 +27,9 @@ Kin client for Windows and Android.
 
 ## Download
 
-[**v0.0.5 Stable**](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.5) is available for Windows x64 and Android ARM64 (Android 10 or later).
+[**v0.0.6 Stable**](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6) is available for Windows x64 and Android ARM64 (Android 10 or later).
 
-For testing, [**v0.0.6-dev.1 Development**](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6-dev.1) is available for Windows x64 and Android ARM64.
+The previous Development preview remains in [release history](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6-dev.1). Use v0.0.6 Stable for current installations and updates.
 
 **Windows:** download the ZIP, extract the complete folder and open **kin-clinet.exe**.
 
@@ -39,7 +39,7 @@ Add your connection token to get started.
 
 ## Updates
 
-Open **Settings > About** to check for updates.
+Open **Settings > About** to check for updates. Version **0.0.6 or later** is required for new connections.
 
 ## Support and licence
 
