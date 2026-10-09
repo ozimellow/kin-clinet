@@ -66,12 +66,27 @@ jobs:
           test -f "releases/v$RELEASE_VERSION/release.json"
           test -f "releases/v$RELEASE_VERSION/release.md"
           python3 - <<'PY'
-          import subprocess
+          import pathlib, subprocess, tempfile
           allowed = {'.gitignore', '.gitattributes', 'LICENSE', 'README.md', 'logo.svg', 'logo-dark.svg',
-                     '.github/workflows/release.yml', '.github/signers', '.github/scripts/verify-release.py'}
+                     '.github/workflows/release.yml', '.github/signers', '.github/scripts/verify-release.py',
+                     'update-policy.json', 'update-policy.json.sig'}
           import re
           paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD']).decode().splitlines()
           assert all(p in allowed or re.fullmatch(r'releases/v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
+          policy_paths = {'update-policy.json', 'update-policy.json.sig'}
+          if policy_paths.intersection(paths):
+              assert policy_paths.issubset(paths), 'Incomplete public update policy'
+              policy = pathlib.Path('update-policy.json')
+              signature = pathlib.Path('update-policy.json.sig')
+              assert all(p.is_file() and not p.is_symlink() for p in (policy, signature)), 'Invalid public update policy files'
+              document = policy.read_bytes()
+              assert 0 < len(document) <= 8192 and 0 < signature.stat().st_size <= 2048, 'Public update policy exceeds limits'
+              signer = pathlib.Path('.github/signers').read_text().strip().split()
+              assert len(signer) == 4 and signer[0] == '119267804+ozimellow@users.noreply.github.com' and signer[1] == 'namespaces="git"' and signer[2] == 'ssh-ed25519', 'Unexpected public publisher identity'
+              with tempfile.TemporaryDirectory(prefix='public-policy-trust-') as temp:
+                  allowed_signers = pathlib.Path(temp) / 'allowed_signers'
+                  allowed_signers.write_text(signer[0] + ' namespaces="kin-client-update-policy" ' + ' '.join(signer[2:]) + chr(10))
+                  subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', str(allowed_signers), '-I', signer[0], '-n', 'kin-client-update-policy', '-s', str(signature)], input=document, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           PY
       - name: Record this run's approval
         shell: bash

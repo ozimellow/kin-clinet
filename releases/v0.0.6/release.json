@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "tag": "v0.0.6",
+  "manualAcceptance": false,
+  "assets": {
+    "SHA256SUMS": "7f90b8db9cbb6bc6878b5e81f44571301f5ae716c33488b994821300d6530343",
+    "SHA256SUMS.sig": "51d93081248e4a374768943bf4cd1db41b8c39e41ef74579df0e39763eac93a0",
+    "allowed_signers": "a8225e435deee53acfbd8580a648732b64c1f0a2dab189799f9360d2059084ed",
+    "kin-clinet-0.0.6-android-arm64.apk": "33ad929594a9159b6496e86e77e527207ff53ab99ae9603bfae62b1ede639e1d",
+    "kin-clinet-0.0.6-windows-x64.zip": "88c33659e3a6cc8b1ee408d83f2f1a318951bac5c9a51a318a927757d4b2a9f4",
+    "release-signing-key.pub": "ac206530d77b8b80ceadfc487a39dafd7f474cd3258c6f3713aa5f621a291732"
+  },
+  "reviewedPackages": {
+    "kin-clinet-0.0.6-android-arm64.apk": "33ad929594a9159b6496e86e77e527207ff53ab99ae9603bfae62b1ede639e1d",
+    "kin-clinet-0.0.6-windows-x64.zip": "88c33659e3a6cc8b1ee408d83f2f1a318951bac5c9a51a318a927757d4b2a9f4"
+  },
+  "reviewedNotesSha256": "2ff17f379b2a1f3773559f578160422da865c6e1f4dfd436e5bf63f2293ba0f0",
+  "android": {
+    "certificateSha256": "1b366e9e20fd45af9608d4b1e9b30ae709c6bcd87bd7cdaaf89c0bd5dc881823",
+    "versionCode": 60010,
+    "inventorySha256": "f5df2e077437b23856a2454fbbc3101491a04de63fee2fc605f8afad10c3d5e2"
+  }
+}
