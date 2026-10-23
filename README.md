@@ -16,6 +16,7 @@
   <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Windows_x64&color=22c55e&style=flat-square&cacheSeconds=300" alt="Latest Windows x64 release"></a>
   <img src="https://img.shields.io/badge/macOS-Coming_soon-64748b?style=flat-square" alt="macOS coming soon">
   <a href="https://github.com/ozimellow/kin-clinet/releases/latest"><img src="https://img.shields.io/github/v/release/ozimellow/kin-clinet?label=Android_ARM64&color=22c55e&style=flat-square&cacheSeconds=300" alt="Latest Android ARM64 release"></a>
+  <a href="https://github.com/ozimellow/kin-clinet/releases/download/v0.0.6/kin-clinet-0.0.6-linux-x64.zip"><img src="https://img.shields.io/badge/Linux_x64-v0.0.6-22c55e?style=flat-square" alt="Linux x64 v0.0.6"></a>
 </p>
 <p align="center">
   <a href="https://github.com/ozimellow/kin-clinet/releases"><strong>Download</strong></a>
@@ -23,11 +24,11 @@
   &nbsp; &middot; &nbsp; <a href="https://github.com/ozimellow/kin-clinet/issues">Support</a>
 </p>
 
-Kin client for Windows and Android.
+Kin client for Windows, Android and Linux.
 
 ## Download
 
-[**v0.0.6 Stable**](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6) is available for Windows x64 and Android ARM64 (Android 10 or later).
+[**v0.0.6 Stable**](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6) is available for Windows x64, Android ARM64 (Android 10 or later) and Linux x64 desktop.
 
 The previous Development preview remains in [release history](https://github.com/ozimellow/kin-clinet/releases/tag/v0.0.6-dev.1). Use v0.0.6 Stable for current installations and updates.
 
@@ -35,11 +36,13 @@ The previous Development preview remains in [release history](https://github.com
 
 **Android:** download the APK and follow Android's installation prompts.
 
+**Linux:** download the ZIP, extract the complete folder and open **kin-clinet**.
+
 Add your connection token to get started.
 
 ## Updates
 
-Open **Settings > About** to check for updates. Version **0.0.6 or later** is required for new connections.
+Open **Settings > About** to check for updates. Windows and Android require version **0.0.6 or later** for new connections.
 
 ## Support and licence
 

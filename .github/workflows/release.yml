@@ -3,6 +3,18 @@ name: Publish verified release
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Publish a staged release or add a separately reviewed platform
+        required: true
+        default: publish
+        type: choice
+        options:
+          - publish
+          - add_platform
+      staging_release_id:
+        description: Owner-created unpublished staging draft ID (add_platform only)
+        required: false
+        type: string
       version:
         description: Accepted release version (for example 0.0.3-dev.1 or 0.0.3)
         required: true
@@ -33,6 +45,8 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      RELEASE_OPERATION: ${{ inputs.operation }}
+      STAGING_RELEASE_ID: ${{ inputs.staging_release_id }}
       RELEASE_VERSION: ${{ inputs.version }}
       EXPECTED_COMMIT: ${{ inputs.expected_commit }}
       APPROVE_PUBLICATION: ${{ inputs.approve_publication }}
@@ -46,6 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$APPROVE_PUBLICATION" = true
+          [[ "$RELEASE_OPERATION" == publish || "$RELEASE_OPERATION" == add_platform ]]
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev\.[1-9][0-9]*)?$ ]]
           if [[ "$RELEASE_VERSION" == *-dev.* ]]; then
             test "$GITHUB_REF" = refs/heads/development
@@ -62,25 +77,53 @@ jobs:
           test "$(git for-each-ref --format='%(taggername)|%(taggeremail:trim)' "refs/tags/v$RELEASE_VERSION")" = 'ozimellow|119267804+ozimellow@users.noreply.github.com'
           git verify-commit HEAD
           git verify-tag "v$RELEASE_VERSION"
-          test "$(git rev-parse "v$RELEASE_VERSION^{commit}")" = "$EXPECTED_COMMIT"
-          test -f "releases/v$RELEASE_VERSION/release.json"
-          test -f "releases/v$RELEASE_VERSION/release.md"
+          if [[ "$RELEASE_OPERATION" = publish ]]; then
+            test "$(git rev-parse "v$RELEASE_VERSION^{commit}")" = "$EXPECTED_COMMIT"
+            test -z "$STAGING_RELEASE_ID"
+            test -f "releases/v$RELEASE_VERSION/release.json"
+            test -f "releases/v$RELEASE_VERSION/release.md"
+          else
+            [[ "$STAGING_RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+            test -f "releases/linux/v$RELEASE_VERSION/release.json"
+            test -f "releases/linux/v$RELEASE_VERSION/release.md"
+          fi
           python3 - <<'PY'
           import pathlib, subprocess, tempfile
           allowed = {'.gitignore', '.gitattributes', 'LICENSE', 'README.md', 'logo.svg', 'logo-dark.svg',
                      '.github/workflows/release.yml', '.github/signers', '.github/scripts/verify-release.py',
-                     'update-policy.json', 'update-policy.json.sig'}
+                     'update-policy.json', 'update-policy.json.sig',
+                     'releases/linux/update-policy.json', 'releases/linux/update-policy.json.sig'}
           import re
           paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD']).decode().splitlines()
-          assert all(p in allowed or re.fullmatch(r'releases/v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
-          policy_paths = {'update-policy.json', 'update-policy.json.sig'}
-          if policy_paths.intersection(paths):
+          assert all(p in allowed or re.fullmatch(r'releases/(?:linux/)?v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
+          import json
+          for prefix, scope in [('', 'shared'), ('releases/linux/', 'linux')]:
+              policy_paths = {prefix + 'update-policy.json', prefix + 'update-policy.json.sig'}
+              if not policy_paths.intersection(paths):
+                  continue
               assert policy_paths.issubset(paths), 'Incomplete public update policy'
-              policy = pathlib.Path('update-policy.json')
-              signature = pathlib.Path('update-policy.json.sig')
+              policy = pathlib.Path(prefix + 'update-policy.json')
+              signature = pathlib.Path(prefix + 'update-policy.json.sig')
               assert all(p.is_file() and not p.is_symlink() for p in (policy, signature)), 'Invalid public update policy files'
               document = policy.read_bytes()
               assert 0 < len(document) <= 8192 and 0 < signature.stat().st_size <= 2048, 'Public update policy exceeds limits'
+              def unique(pairs):
+                  result = {}
+                  for key, value in pairs:
+                      assert key not in result, 'Duplicate policy field'
+                      result[key] = value
+                  return result
+              data = json.loads(document, object_pairs_hook=unique)
+              assert set(data) == {'schemaVersion', 'revision', 'issuedAt', 'minimumVersions', 'reason'}, 'Unknown update policy fields'
+              assert type(data['schemaVersion']) is int and data['schemaVersion'] == 1 and type(data['revision']) is int and data['revision'] > 0, 'Invalid policy revision'
+              minimum = data['minimumVersions']
+              assert set(minimum) in ({'windows', 'android'}, {'windows', 'android', 'linux'}), 'Unknown policy platform'
+              if scope == 'shared':
+                  assert set(minimum) == {'windows', 'android'}, 'Separate platform policy required'
+              else:
+                  assert minimum['windows'] is None and minimum['android'] is None, 'Platform policy affects another platform'
+                  assert 'linux' not in minimum or minimum['linux'] is not None, 'Unset platform minimum must be omitted'
+              assert all(value is None or isinstance(value, str) and re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value) for value in minimum.values()), 'Invalid minimum version'
               signer = pathlib.Path('.github/signers').read_text().strip().split()
               assert len(signer) == 4 and signer[0] == '119267804+ozimellow@users.noreply.github.com' and signer[1] == 'namespaces="git"' and signer[2] == 'ssh-ed25519', 'Unexpected public publisher identity'
               with tempfile.TemporaryDirectory(prefix='public-policy-trust-') as temp:
@@ -88,7 +131,14 @@ jobs:
                   allowed_signers.write_text(signer[0] + ' namespaces="kin-client-update-policy" ' + ' '.join(signer[2:]) + chr(10))
                   subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', str(allowed_signers), '-I', signer[0], '-n', 'kin-client-update-policy', '-s', str(signature)], input=document, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           PY
+      - name: Add and independently verify the approved platform
+        if: inputs.operation == 'add_platform'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-release.py --add-platform "releases/linux/v$RELEASE_VERSION/release.json" "$STAGING_RELEASE_ID"
       - name: Record this run's approval
+        if: inputs.operation == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -114,6 +164,7 @@ jobs:
               summary.write('Notes SHA-256: `' + metadata['reviewedNotesSha256'] + '`\n')
           PY
       - name: Verify staged download
+        if: inputs.operation == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -129,6 +180,7 @@ jobs:
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/candidate"
           python3 .github/scripts/verify-release.py "$RUNNER_TEMP/approved-release/release.json" "$RUNNER_TEMP/candidate"
       - name: Publish the verified release
+        if: inputs.operation == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -139,6 +191,7 @@ jobs:
             gh release edit "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --title "v$RELEASE_VERSION" --notes-file "releases/v$RELEASE_VERSION/release.md"
           fi
       - name: Verify published downloads
+        if: inputs.operation == 'publish'
         shell: bash
         run: |
           set -euo pipefail

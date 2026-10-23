@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "tag": "v0.0.6",
+  "tagCommit": "9f077ac7514b3a3bc257c3bbe0f6044661204906",
+  "platform": "linux-x64",
+  "manualAcceptance": false,
+  "assets": {
+    "kin-clinet-0.0.6-linux-x64.zip": "600550e9455c779e687b2f46a81dfcdf7d125bd24a2e9f6b456e8cc4886df266",
+    "linux-x64.json": "e89be608e941b7016733e847cd8d412dc8bcb6e2bd59e311c4a93863feceb879",
+    "SHA256SUMS-linux-x64": "10a02f73996d3806d6e7de979e6fc13dd9466e664295c217c0dc698dbec66b18",
+    "SHA256SUMS-linux-x64.sig": "fdb3c0291b98ce6a0d050ea2ccca2e3ffc2b68e28bee0fe47f242ab8bf6d2107"
+  },
+  "reviewedPackageSha256": "600550e9455c779e687b2f46a81dfcdf7d125bd24a2e9f6b456e8cc4886df266",
+  "reviewedNotesSha256": "7db265545b08013f6aac35cf6163f5dbf01e2db7bae1fd9af5d4367193662506"
+}
