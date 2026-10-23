@@ -4,15 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Publish a staged release or add a separately reviewed platform
+        description: Publish or update an explicitly reviewed package
         required: true
         default: publish
         type: choice
         options:
           - publish
           - add_platform
+          - replace_windows
       staging_release_id:
         description: Owner-created unpublished staging draft ID (add_platform only)
+        required: false
+        type: string
+      staging_asset_ids:
+        description: Three exact temporary asset IDs (replace_windows only)
         required: false
         type: string
       version:
@@ -47,6 +52,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_OPERATION: ${{ inputs.operation }}
       STAGING_RELEASE_ID: ${{ inputs.staging_release_id }}
+      STAGING_ASSET_IDS: ${{ inputs.staging_asset_ids }}
       RELEASE_VERSION: ${{ inputs.version }}
       EXPECTED_COMMIT: ${{ inputs.expected_commit }}
       APPROVE_PUBLICATION: ${{ inputs.approve_publication }}
@@ -60,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$APPROVE_PUBLICATION" = true
-          [[ "$RELEASE_OPERATION" == publish || "$RELEASE_OPERATION" == add_platform ]]
+          [[ "$RELEASE_OPERATION" == publish || "$RELEASE_OPERATION" == add_platform || "$RELEASE_OPERATION" == replace_windows ]]
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev\.[1-9][0-9]*)?$ ]]
           if [[ "$RELEASE_VERSION" == *-dev.* ]]; then
             test "$GITHUB_REF" = refs/heads/development
@@ -80,12 +86,20 @@ jobs:
           if [[ "$RELEASE_OPERATION" = publish ]]; then
             test "$(git rev-parse "v$RELEASE_VERSION^{commit}")" = "$EXPECTED_COMMIT"
             test -z "$STAGING_RELEASE_ID"
+            test -z "$STAGING_ASSET_IDS"
             test -f "releases/v$RELEASE_VERSION/release.json"
             test -f "releases/v$RELEASE_VERSION/release.md"
-          else
+          elif [[ "$RELEASE_OPERATION" = add_platform ]]; then
+            test -z "$STAGING_ASSET_IDS"
             [[ "$STAGING_RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
             test -f "releases/linux/v$RELEASE_VERSION/release.json"
             test -f "releases/linux/v$RELEASE_VERSION/release.md"
+          else
+            test "$GITHUB_REF" = refs/heads/main
+            test -z "$STAGING_RELEASE_ID"
+            [[ "$STAGING_ASSET_IDS" =~ ^[1-9][0-9]*,[1-9][0-9]*,[1-9][0-9]*$ ]]
+            test -f "releases/windows/v$RELEASE_VERSION/release.json"
+            test -f "releases/windows/v$RELEASE_VERSION/release.md"
           fi
           python3 - <<'PY'
           import pathlib, subprocess, tempfile
@@ -95,7 +109,7 @@ jobs:
                      'releases/linux/update-policy.json', 'releases/linux/update-policy.json.sig'}
           import re
           paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD']).decode().splitlines()
-          assert all(p in allowed or re.fullmatch(r'releases/(?:linux/)?v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
+          assert all(p in allowed or re.fullmatch(r'releases/(?:(?:linux|windows)/)?v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*)?/release\.(json|md)', p) for p in paths), 'Unexpected public source path'
           import json
           for prefix, scope in [('', 'shared'), ('releases/linux/', 'linux')]:
               policy_paths = {prefix + 'update-policy.json', prefix + 'update-policy.json.sig'}
@@ -137,6 +151,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/verify-release.py --add-platform "releases/linux/v$RELEASE_VERSION/release.json" "$STAGING_RELEASE_ID"
+      - name: Replace and independently verify the approved Windows package
+        if: inputs.operation == 'replace_windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-release.py --replace-windows "releases/windows/v$RELEASE_VERSION/release.json" "$STAGING_ASSET_IDS"
       - name: Record this run's approval
         if: inputs.operation == 'publish'
         shell: bash

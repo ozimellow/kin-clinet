@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "tag": "v0.0.6",
+  "tagCommit": "9f077ac7514b3a3bc257c3bbe0f6044661204906",
+  "releaseId": 408206668,
+  "platform": "windows-x64",
+  "manualAcceptance": false,
+  "beforeAssets": {
+    "allowed_signers": {
+      "id": 625777491,
+      "bytes": 112,
+      "sha256": "a8225e435deee53acfbd8580a648732b64c1f0a2dab189799f9360d2059084ed"
+    },
+    "kin-clinet-0.0.6-android-arm64.apk": {
+      "id": 625777487,
+      "bytes": 15242144,
+      "sha256": "33ad929594a9159b6496e86e77e527207ff53ab99ae9603bfae62b1ede639e1d"
+    },
+    "kin-clinet-0.0.6-linux-x64.zip": {
+      "id": 668027245,
+      "bytes": 32399777,
+      "sha256": "600550e9455c779e687b2f46a81dfcdf7d125bd24a2e9f6b456e8cc4886df266"
+    },
+    "kin-clinet-0.0.6-windows-x64.zip": {
+      "id": 625777490,
+      "bytes": 12840680,
+      "sha256": "88c33659e3a6cc8b1ee408d83f2f1a318951bac5c9a51a318a927757d4b2a9f4"
+    },
+    "linux-x64.json": {
+      "id": 668027369,
+      "bytes": 265,
+      "sha256": "e89be608e941b7016733e847cd8d412dc8bcb6e2bd59e311c4a93863feceb879"
+    },
+    "release-signing-key.pub": {
+      "id": 625777489,
+      "bytes": 81,
+      "sha256": "ac206530d77b8b80ceadfc487a39dafd7f474cd3258c6f3713aa5f621a291732"
+    },
+    "SHA256SUMS": {
+      "id": 625777488,
+      "bytes": 200,
+      "sha256": "7f90b8db9cbb6bc6878b5e81f44571301f5ae716c33488b994821300d6530343"
+    },
+    "SHA256SUMS-linux-x64": {
+      "id": 668026998,
+      "bytes": 97,
+      "sha256": "10a02f73996d3806d6e7de979e6fc13dd9466e664295c217c0dc698dbec66b18"
+    },
+    "SHA256SUMS-linux-x64.sig": {
+      "id": 668027142,
+      "bytes": 298,
+      "sha256": "fdb3c0291b98ce6a0d050ea2ccca2e3ffc2b68e28bee0fe47f242ab8bf6d2107"
+    },
+    "SHA256SUMS.sig": {
+      "id": 625777534,
+      "bytes": 298,
+      "sha256": "51d93081248e4a374768943bf4cd1db41b8c39e41ef74579df0e39763eac93a0"
+    }
+  },
+  "assets": {
+    "kin-clinet-0.0.6-windows-x64.zip": "7a75e34b57d51158bf7c9bbba3691633bab8189ca9583acadf7de8c7cc9e9e12",
+    "SHA256SUMS": "d843c23fa2d2bb0dad734ccfe6f7c95a9340200e91a4a90f3792534e42c22bf3",
+    "SHA256SUMS.sig": "032e14c51eb1ada18f85e7e7bd007028bdaf82b9f7662b01186c0fcb8a25bd64"
+  },
+  "stagedAssets": {
+    "kin-clinet-0.0.6-windows-x64.zip": "staged-windows-7a75e34b57d5.zip",
+    "SHA256SUMS": "staged-windows-7a75e34b57d5-SHA256SUMS",
+    "SHA256SUMS.sig": "staged-windows-7a75e34b57d5-SHA256SUMS.sig"
+  },
+  "reviewedPackageSha256": "7a75e34b57d51158bf7c9bbba3691633bab8189ca9583acadf7de8c7cc9e9e12",
+  "reviewedNotesSha256": "f9e2f9b13a762d7e3d0b12f37fb5adf3d44ba6679123e4fde34678226a610c71"
+}

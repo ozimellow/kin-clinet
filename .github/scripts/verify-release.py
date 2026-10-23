@@ -448,12 +448,147 @@ def run_add_platform(manifest_path, staging_id):
     print("PASS: additive platform downloads verified; existing release retained")
 
 
+def verify_windows_replacement(source, directory, retained):
+    directory, retained = Path(directory), Path(retained)
+    name = "kin-clinet-" + source["tag"][1:] + "-windows-x64.zip"
+    android = "kin-clinet-" + source["tag"][1:] + "-android-arm64.apk"
+    require({p.name for p in directory.iterdir()} == set(source["assets"]), "Unexpected replacement files")
+    for filename, checksum in source["assets"].items():
+        file = directory / filename
+        require(file.is_file() and not file.is_symlink() and digest(file.read_bytes()) == checksum, "Replacement digest mismatch")
+    require((retained / "release-signing-key.pub").read_text().strip() == KEY and (retained / "allowed_signers").read_text().strip() == 'publisher namespaces="release" ' + KEY, "Publisher trust changed")
+    checksums = "".join(checksum + "  " + filename + "\n" for filename, checksum in sorted({name: source["assets"][name], android: source["beforeAssets"][android]["sha256"]}.items())).encode()
+    require((directory / "SHA256SUMS").read_bytes() == checksums, "Replacement checksum statement changed")
+    signature = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(retained / "allowed_signers"), "-I", "publisher", "-n", "release", "-s", str(directory / "SHA256SUMS.sig")], input=checksums, capture_output=True, timeout=20)
+    require(signature.returncode == 0, "Replacement signature failed")
+    verify_windows(directory / name, name, {"tag": source["tag"]})
+
+
+def replace_windows(manifest_path, staged_ids, api, expected_commit, tag_object):
+    """Replace the three expressly approved assets, preserving other downloads."""
+    manifest_path = Path(manifest_path)
+    source = parse(manifest_path.read_bytes())
+    require(set(source) == {"schemaVersion", "tag", "tagCommit", "releaseId", "platform", "manualAcceptance", "beforeAssets", "assets", "stagedAssets", "reviewedPackageSha256", "reviewedNotesSha256"}, "Unknown replacement metadata")
+    tag = source["tag"]
+    require(source["schemaVersion"] == 1 and source["manualAcceptance"] is False and source["platform"] == "windows-x64" and re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag), "Invalid replacement approval")
+    require(re.fullmatch(r"[a-f0-9]{40}", expected_commit) and re.fullmatch(r"[a-f0-9]{40}", source["tagCommit"]) and type(source["releaseId"]) is int and source["releaseId"] > 0, "Invalid replacement identity")
+    name = "kin-clinet-" + tag[1:] + "-windows-x64.zip"
+    replacement_names = {name, "SHA256SUMS", "SHA256SUMS.sig"}
+    require(set(source["assets"]) == replacement_names and all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) for value in source["assets"].values()) and source["reviewedPackageSha256"] == source["assets"][name], "Exact Windows replacement review required")
+    require(digest(manifest_path.with_name("release.md").read_bytes()) == source["reviewedNotesSha256"], "Replacement notes changed")
+    before = source["beforeAssets"]
+    legacy = parse((Path("releases") / tag / "release.json").read_bytes())["assets"]
+    linux = parse((Path("releases/linux") / tag / "release.json").read_bytes())["assets"]
+    require(set(before) == set(legacy) | set(linux) and not set(legacy).intersection(linux), "Original platform inventory changed")
+    for filename, checksum in {**legacy, **linux}.items():
+        row = before[filename]
+        require(set(row) == {"id", "bytes", "sha256"} and type(row["id"]) is int and row["id"] > 0 and type(row["bytes"]) is int and 0 < row["bytes"] <= MAX and row["sha256"] == checksum, "Original asset review changed")
+    require(len({row["id"] for row in before.values()}) == len(before), "Duplicate original asset identity")
+    prefix = "staged-windows-" + source["assets"][name][:12]
+    expected_staged = {name: prefix + ".zip", "SHA256SUMS": prefix + "-SHA256SUMS", "SHA256SUMS.sig": prefix + "-SHA256SUMS.sig"}
+    require(source["stagedAssets"] == expected_staged and len(staged_ids) == 3 and len(set(staged_ids)) == 3 and all(type(identifier) is int and identifier > 0 for identifier in staged_ids), "Invalid staged asset approval")
+    original = api.tagged(tag)
+    identity = release_identity(original)
+    require(original["id"] == source["releaseId"] and original["draft"] is False and original["immutable"] is False and original["prerelease"] is False and original["target_commitish"] == source["tagCommit"], "Original release changed")
+    rows = asset_map(api.assets(original["id"]))
+    require(set(rows) == set(before) | set(expected_staged.values()), "Unexpected live asset inventory")
+    def exact(row):
+        return {key: row[key] for key in ("id", "name", "size", "state", "digest")}
+    for filename, review in before.items():
+        require(rows[filename]["id"] == review["id"] and rows[filename]["size"] == review["bytes"] and rows[filename].get("digest") == "sha256:" + review["sha256"], "Original asset identity changed")
+    stage = {filename: rows[staged] for filename, staged in expected_staged.items()}
+    require({row["id"] for row in stage.values()} == set(staged_ids) and all(row.get("digest") == "sha256:" + source["assets"][filename] for filename, row in stage.items()), "Staged download differs from approval")
+    refs, latest = api.refs(), api.latest()
+    require(refs.get("refs/heads/" + os.environ["GITHUB_REF_NAME"]) == expected_commit and refs.get("refs/tags/" + tag) == tag_object, "Publication references changed")
+    expected_rows = {filename: exact(row) for filename, row in rows.items()}
+    def unchanged():
+        require(release_identity(api.release(original["id"])) == identity and api.refs() == refs and api.latest() == latest, "Release or references changed")
+        current = asset_map(api.assets(original["id"]))
+        require({filename: exact(row) for filename, row in current.items()} == expected_rows, "Concurrent release asset change")
+        return current
+    with tempfile.TemporaryDirectory(prefix="asset-replacement-", dir=os.environ.get("RUNNER_TEMP")) as temporary:
+        root = Path(temporary)
+        retained, staged, published = root / "original", root / "staged", root / "published"
+        for folder in (retained, staged, published):
+            folder.mkdir()
+        for filename, review in sorted(before.items()):
+            api.download(rows[filename], retained / filename)
+            require(digest((retained / filename).read_bytes()) == review["sha256"], "Original download digest mismatch")
+        for filename, row in stage.items():
+            api.download(row, staged / filename)
+        verify_windows_replacement(source, staged, retained)
+        unchanged()
+        uploaded = {}
+        completed = False
+        try:
+            for filename in (name, "SHA256SUMS", "SHA256SUMS.sig"):
+                unchanged()
+                api.call("releases/assets/" + str(before[filename]["id"]), "--method", "DELETE")
+                expected_rows.pop(filename)
+                unchanged()
+                row = api.upload(original["id"], staged / filename)
+                uploaded[filename] = exact(row)
+                expected_rows[filename] = exact(row)
+                unchanged()
+            for filename in sorted(replacement_names):
+                api.download(unchanged()[filename], published / filename)
+            verify_windows_replacement(source, published, retained)
+            unchanged()
+            completed = True
+            for filename, row in stage.items():
+                unchanged()
+                api.call("releases/assets/" + str(row["id"]), "--method", "DELETE")
+                expected_rows.pop(row["name"])
+                unchanged()
+        except Exception:
+            # Restore only absent or positively identified transaction-owned assets.
+            # Never delete an unrecognized concurrent upload to recover a failure.
+            if not completed and release_identity(api.release(original["id"])) == identity:
+                for filename in (name, "SHA256SUMS", "SHA256SUMS.sig"):
+                    current = asset_map(api.assets(original["id"]))
+                    if filename in uploaded and filename in current and exact(current[filename]) == uploaded[filename]:
+                        api.call("releases/assets/" + str(uploaded[filename]["id"]), "--method", "DELETE")
+                        current.pop(filename)
+                    if filename not in current:
+                        api.upload(original["id"], retained / filename)
+            raise
+        final = unchanged()
+        require(set(final) == set(before), "Staged assets remain")
+        return {"operation": "replace_windows", "tag": tag, "metadataCommit": expected_commit, "tagCommit": source["tagCommit"], "releaseId": original["id"], "replacedAssets": uploaded, "replacedSha256": source["assets"], "retainedAssets": {filename: exact(final[filename]) for filename in before if filename not in replacement_names}, "retainedSha256": {filename: row["sha256"] for filename, row in before.items() if filename not in replacement_names}, "previousAssets": before, "stagedAssetsRemoved": True, "referencesUnchanged": True, "latest": latest}
+
+
+def run_replace_windows(manifest_path, staged_ids):
+    require(os.environ.get("APPROVE_PUBLICATION") == "true" and os.environ.get("GITHUB_ACTOR") == "ozimellow" and os.environ.get("RELEASE_OPERATION") == "replace_windows", "Exact owner replacement approval required")
+    source = parse(Path(manifest_path).read_bytes())
+    expected, tag = os.environ.get("EXPECTED_COMMIT", ""), source["tag"]
+    def git(*args):
+        return subprocess.check_output(["git", *args], stderr=subprocess.PIPE, timeout=30)
+    require(tag == "v" + os.environ["RELEASE_VERSION"] and os.environ.get("GITHUB_REF_NAME") == "main" and git("rev-parse", "HEAD").decode().strip() == expected == os.environ.get("GITHUB_SHA"), "Reviewed replacement commit changed")
+    require(git("rev-parse", tag + "^{commit}").decode().strip() == source["tagCommit"], "Original signed tag changed")
+    parent = git("rev-parse", "HEAD^").decode().strip()
+    subprocess.run(["git", "verify-commit", parent], check=True, capture_output=True, timeout=30)
+    for filename in ("releases/" + tag + "/release.json", "releases/" + tag + "/release.md", "releases/linux/" + tag + "/release.json", "releases/linux/" + tag + "/release.md", "update-policy.json", "update-policy.json.sig", "releases/linux/update-policy.json", "releases/linux/update-policy.json.sig"):
+        require(git("show", parent + ":" + filename) == Path(filename).read_bytes(), "Existing release or policy metadata changed")
+    require(re.fullmatch(r"[1-9][0-9]*(?:,[1-9][0-9]*){2}", staged_ids), "Expected exactly three staged asset IDs")
+    receipt = replace_windows(manifest_path, [int(value) for value in staged_ids.split(",")], ReleaseAPI(os.environ["GITHUB_REPOSITORY"]), expected, git("rev-parse", tag).decode().strip())
+    (Path(os.environ["RUNNER_TEMP"]) / "asset-replacement-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as stream:
+        stream.write("Verified Windows package replacement for `" + tag + "`. Other downloads, release tag and Latest selection retained. Temporary assets removed.\n\n")
+        for filename, checksum in sorted(receipt["replacedSha256"].items()):
+            stream.write(filename + " SHA-256: `" + checksum + "`\n\n")
+        stream.write("```json\n" + json.dumps(receipt, indent=2) + "\n```\n")
+    print("PASS: approved Windows replacement independently verified")
+
+
 if __name__ == "__main__":
     try:
         transaction = len(sys.argv) == 4 and sys.argv[1] == "--add-platform"
         extension = len(sys.argv) == 4 and sys.argv[1] == "--platform-extension"
-        require(transaction or extension or len(sys.argv) == 3, "Usage: verify-release.py [--platform-extension] MANIFEST ASSET_DIRECTORY")
-        if transaction:
+        replacement = len(sys.argv) == 4 and sys.argv[1] == "--replace-windows"
+        require(transaction or extension or replacement or len(sys.argv) == 3, "Usage: verify-release.py [--platform-extension] MANIFEST ASSET_DIRECTORY")
+        if replacement:
+            run_replace_windows(sys.argv[2], sys.argv[3])
+        elif transaction:
             run_add_platform(sys.argv[2], sys.argv[3])
         elif extension:
             verify_extension(sys.argv[2], sys.argv[3])
