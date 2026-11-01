@@ -3,6 +3,17 @@ name: Publish verified release
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Publish or perform the approved v0.0.7 Windows correction
+        required: true
+        default: publish
+        type: choice
+        options: [publish, replace_windows]
+      staging_release_id:
+        description: Exact owned Windows-package staging draft ID (replacement only)
+        required: false
+        default: ""
+        type: string
       version:
         description: Accepted stable version
         required: true
@@ -32,6 +43,8 @@ jobs:
     permissions:
       contents: write
     env:
+      RELEASE_OPERATION: ${{ inputs.operation }}
+      STAGING_RELEASE_ID: ${{ inputs.staging_release_id }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_VERSION: ${{ inputs.version }}
       EXPECTED_COMMIT: ${{ inputs.expected_commit }}
@@ -46,6 +59,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$APPROVE_PUBLICATION" = true
+          case "$RELEASE_OPERATION" in
+            publish) test -z "$STAGING_RELEASE_ID" ;;
+            replace_windows) test "$RELEASE_VERSION" = 0.0.7; [[ "$STAGING_RELEASE_ID" =~ ^[1-9][0-9]*$ ]] ;;
+            *) exit 1 ;;
+          esac
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           test "$RELEASE_VERSION" = 0.0.7
           [[ "$EXPECTED_COMMIT" =~ ^[a-f0-9]{40}$ ]]
@@ -61,7 +79,12 @@ jobs:
           test "$(git for-each-ref --format='%(taggername)|%(taggeremail:trim)' "refs/tags/v$RELEASE_VERSION")" = 'ozimellow|119267804+ozimellow@users.noreply.github.com'
           git verify-commit HEAD
           git verify-tag "v$RELEASE_VERSION"
-          test "$(git rev-parse "v$RELEASE_VERSION^{commit}")" = "$EXPECTED_COMMIT"
+          if test "$RELEASE_OPERATION" = publish; then
+            test "$(git rev-parse "v$RELEASE_VERSION^{commit}")" = "$EXPECTED_COMMIT"
+          else
+            git merge-base --is-ancestor v0.0.7^{commit} HEAD
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.0.7" --jq .target_commitish)" = "$(git rev-parse v0.0.7^{commit})"
+          fi
           python3 - <<'PY'
           import json, pathlib, re, subprocess, tempfile
           allowed = {'.gitignore', '.gitattributes', 'LICENSE', 'README.md', 'logo.svg', 'logo-dark.svg',
@@ -132,6 +155,7 @@ jobs:
               summary.write('Notes SHA-256: `' + metadata['reviewedNotesSha256'] + '`\n')
           PY
       - name: Verify staged downloads
+        if: env.RELEASE_OPERATION == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -145,12 +169,14 @@ jobs:
           gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/candidate"
           python3 .github/scripts/verify-release.py "$RUNNER_TEMP/approved-release/release.json" "$RUNNER_TEMP/candidate"
       - name: Publish verified release
+        if: env.RELEASE_OPERATION == 'publish'
         shell: bash
         run: |
           set -euo pipefail
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$EXPECTED_COMMIT"
           gh release edit "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --title "v$RELEASE_VERSION" --notes-file "releases/v$RELEASE_VERSION/release.md"
       - name: Verify published downloads
+        if: env.RELEASE_OPERATION == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -164,3 +190,274 @@ jobs:
           assert r['tagName'] == 'v' + os.environ['RELEASE_VERSION'] and r['targetCommitish'] == os.environ['EXPECTED_COMMIT']
           print(r['url'])
           PY
+      - name: Replace the approved Windows downloads
+        if: env.RELEASE_OPERATION == 'replace_windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          # replacement-transaction-source-begin
+          """Generic, exact-version release-asset correction used only by the manual workflow."""
+          import copy, hashlib, http.client, json, os, re, signal, subprocess, sys
+          from pathlib import Path
+          from urllib.parse import quote
+          MAX = 536870912
+          ORIGINAL_V007 = {'1436836515': {'tagObject': '2a3c130b69ba8cff26713107b824d53a3cef4da4', 'tagCommit': '770bfe682f94b9bcda549ec32a342452a935fa16', 'releaseId': 430697632}, '1381822878': {'tagObject': '1e758b476bd4ed15e5817474ab3795e9b9f86709', 'tagCommit': '1f41ed089deef9eae2b5a54b6d741f87e9e17f04', 'releaseId': 430703863}}
+
+          INTERRUPTS = []
+
+          class ControlledInterrupt(Exception): pass
+
+          def install_interrupt_handlers():
+              def interrupted(number, frame):
+                  INTERRUPTS.append(number)
+                  if len(INTERRUPTS) == 1: raise ControlledInterrupt('Workflow interrupted')
+              for number in (signal.SIGINT, signal.SIGTERM): signal.signal(number, interrupted)
+
+          def require(value, message):
+              if not value: raise ValueError(message)
+
+          def digest(data): return hashlib.sha256(data).hexdigest()
+
+          def parse(data):
+              def unique(pairs):
+                  result = {}
+                  for key, value in pairs:
+                      require(key not in result, 'Duplicate metadata field')
+                      result[key] = value
+                  return result
+              return json.loads(data, object_pairs_hook=unique)
+
+          def asset_map(rows):
+              require(isinstance(rows, list) and 0 < len(rows) <= 16, 'Unexpected asset count')
+              out, ids = {}, set()
+              for row in rows:
+                  require(type(row.get('id')) is int and row['id'] > 0 and row['id'] not in ids, 'Invalid asset ID')
+                  name = row.get('name')
+                  require(isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,179}', name) and name not in out, 'Invalid asset name')
+                  require(type(row.get('size')) is int and 0 < row['size'] <= MAX and row.get('state') == 'uploaded', 'Invalid asset state')
+                  require(re.fullmatch(r'sha256:[a-f0-9]{64}', row.get('digest', '')), 'Missing asset digest')
+                  out[name] = copy.deepcopy(row); ids.add(row['id'])
+              return out
+
+          def identity(row):
+              return {k: row[k] for k in ('id', 'name', 'size', 'state', 'digest')}
+
+          def release_identity(row):
+              return {k: row[k] for k in ('id', 'tag_name', 'target_commitish', 'name', 'body', 'draft', 'prerelease', 'created_at', 'published_at', 'immutable')}
+
+          class API:
+              def __init__(self, repository):
+                  require(repository == os.environ['GITHUB_REPOSITORY'], 'Repository changed')
+                  self.repository = repository; self.prefix = 'repos/' + repository + '/'
+              def call(self, endpoint, *options):
+                  p = subprocess.run(['gh', 'api', self.prefix + endpoint, *options], capture_output=True, timeout=180)
+                  require(p.returncode == 0, 'Release API request failed')
+                  return parse(p.stdout) if p.stdout else None
+              def release(self, number): return self.call('releases/' + str(number))
+              def tagged(self, tag): return self.call('releases/tags/' + tag)
+              def latest(self): return release_identity(self.call('releases/latest'))
+              def assets(self, number):
+                  pages = self.call('releases/' + str(number) + '/assets?per_page=100', '--paginate', '--slurp')
+                  return [r for page in pages for r in page]
+              def refs(self):
+                  p = subprocess.run(['git', 'ls-remote', '--refs', 'https://github.com/' + self.repository + '.git'], capture_output=True, text=True, timeout=60)
+                  require(p.returncode == 0, 'Remote references unavailable')
+                  rows = [x.split('\t') for x in p.stdout.splitlines()]
+                  require(all(len(x) == 2 and re.fullmatch(r'[a-f0-9]{40}', x[0]) and x[1].startswith('refs/') for x in rows), 'Invalid references')
+                  return {name: sha for sha, name in rows}
+              def download(self, row, output):
+                  with Path(output).open('xb') as stream:
+                      p = subprocess.run(['gh', 'api', self.prefix + 'releases/assets/' + str(row['id']), '-H', 'Accept: application/octet-stream'], stdout=stream, stderr=subprocess.PIPE, timeout=240)
+                  require(p.returncode == 0 and Path(output).stat().st_size == row['size'], 'Asset download failed')
+              def upload(self, number, path):
+                  path = Path(path); token = os.environ.get('GH_TOKEN', '')
+                  require(path.is_file() and not path.is_symlink() and token, 'Invalid upload')
+                  connection = http.client.HTTPSConnection('uploads.github.com', timeout=240)
+                  try:
+                      with path.open('rb') as stream:
+                          connection.request('POST', '/repos/' + self.repository + '/releases/' + str(number) + '/assets?name=' + quote(path.name, safe=''), body=stream, headers={'Authorization':'Bearer ' + token, 'Accept':'application/vnd.github+json', 'Content-Type':'application/octet-stream', 'Content-Length':str(path.stat().st_size), 'X-GitHub-Api-Version':'2022-11-28', 'User-Agent':'verified-release'})
+                          response = connection.getresponse(); require(response.status == 201, 'Upload failed')
+                          raw = response.read(65537); require(len(raw) <= 65536, 'Upload response too large')
+                      row = parse(raw); asset_map([row])
+                      require(row['name'] == path.name and row['size'] == path.stat().st_size and row['digest'] == 'sha256:' + digest(path.read_bytes()), 'Upload identity mismatch')
+                      return row
+                  finally: connection.close()
+              def rename(self, number, name): return self.call('releases/assets/' + str(number), '--method', 'PATCH', '-f', 'name=' + name)
+              def delete_asset(self, number): self.call('releases/assets/' + str(number), '--method', 'DELETE')
+              def delete_draft(self, number): self.call('releases/' + str(number), '--method', 'DELETE')
+
+          def replace_windows(api, old, new, draft_id, expected, tag_object, tag_commit, run_id, origin, work, verify_bundle):
+              require(new['tag'] == old['tag'] == 'v0.0.7', 'Replacement is limited to v0.0.7')
+              require(old['schemaVersion'] == new['schemaVersion'] == 5 and old['manualAcceptance'] is True and new['manualAcceptance'] is True, 'Exact bundle approval required')
+              require(type(draft_id) is int and draft_id > 0 and re.fullmatch(r'[0-9]+-[0-9]+', run_id), 'Invalid staging/run ID')
+              for value in (expected, tag_object, tag_commit): require(re.fullmatch(r'[a-f0-9]{40}', value), 'Invalid commit identity')
+              old_assets, new_assets = old['assets'], new['assets']
+              require(set(old_assets) == set(new_assets) and len(old_assets) == 10, 'Expected complete ten-asset bundles')
+              windows = [n for n in old_assets if n.endswith('-0.0.7-windows-x64.zip')]
+              require(len(windows) == 1, 'Expected one Windows ZIP')
+              changed = {windows[0], 'SHA256SUMS', 'SHA256SUMS.sig'}
+              require({n for n in old_assets if old_assets[n] != new_assets[n]} == changed, 'Only three Windows assets may change')
+              stable = set(old_assets) - changed
+              require(len(stable) == 7 and all(re.fullmatch(r'[a-f0-9]{64}', h) for h in list(old_assets.values()) + list(new_assets.values())), 'Invalid bundle hashes')
+              require(origin in ORIGINAL_V007.values() and tag_object == origin['tagObject'] and tag_commit == origin['tagCommit'], 'Original signed tag changed')
+              original = api.tagged('v0.0.7'); rid = original['id']; release = release_identity(original)
+              require(rid == origin['releaseId'], 'Original release ID changed')
+              require(original['draft'] is False and original['prerelease'] is False and original['immutable'] is False and original['target_commitish'] == tag_commit and rid != draft_id, 'Original release changed')
+              rows = asset_map(api.assets(rid)); require(set(rows) == set(old_assets), 'Original asset names changed')
+              for n, row in rows.items(): require(row['digest'] == 'sha256:' + old_assets[n], 'Original asset hash changed')
+              baseline = {n: identity(r) for n, r in rows.items()}; expected_rows = copy.deepcopy(baseline)
+              refs, latest = api.refs(), api.latest()
+              require(refs.get('refs/heads/main') == refs.get('refs/heads/development') == expected and refs.get('refs/tags/v0.0.7') == tag_object and latest['id'] == rid, 'Release references changed')
+              draft = api.release(draft_id); draft_identity = release_identity(draft)
+              require(draft['draft'] is True and draft['prerelease'] is False and draft['immutable'] is False and draft.get('author', {}).get('login') == 'ozimellow' and draft['target_commitish'] == expected, 'Unowned staging draft')
+              require(re.fullmatch(r'windows-package-staging-v0\.0\.7-[a-f0-9]{16,40}', draft['tag_name']) and 'refs/tags/' + draft['tag_name'] not in refs, 'Staging must not create a tag')
+              staged = asset_map(api.assets(draft_id)); require(set(staged) == set(new_assets), 'Incomplete staging bundle')
+              for n, row in staged.items(): require(row['digest'] == 'sha256:' + new_assets[n] and row.get('uploader', {}).get('login') == 'ozimellow', 'Staging asset hash or owner changed')
+              staged_rows = {n: identity(r) for n, r in staged.items()}
+              work = Path(work); work.mkdir(exist_ok=False); receipt = {'operation':'replace_windows','tag':'v0.0.7','releaseId':rid,'stagingReleaseId':draft_id,'metadataCommit':expected,'tagObject':tag_object,'tagCommit':tag_commit,'status':'STARTED','previousAssets':baseline,'previousSHA256':old_assets,'replacementSHA256':new_assets,'rollbackVerified':False}
+              def record():
+                  temporary = work/'receipt.pending.json'
+                  temporary.write_text(json.dumps(receipt, indent=2)+'\n')
+                  os.replace(temporary,work/'receipt.json')
+              record()
+              def check_draft():
+                  d = api.release(draft_id)
+                  require(release_identity(d) == draft_identity and d['draft'] is True and d.get('author',{}).get('login') == 'ozimellow', 'Staging ownership changed')
+                  require({n:identity(r) for n,r in asset_map(api.assets(draft_id)).items()} == staged_rows, 'Staging contents changed')
+              def guard(check_assets=True):
+                  require(release_identity(api.release(rid)) == release and api.refs() == refs and api.latest() == latest, 'Concurrent release or reference change')
+                  current = asset_map(api.assets(rid))
+                  if check_assets: require({n:identity(r) for n,r in current.items()} == expected_rows, 'Concurrent asset change')
+                  check_draft(); return current
+              def fetch(mapping, hashes, folder):
+                  folder.mkdir()
+                  for n in sorted(hashes):
+                      api.download(mapping[n], folder/n)
+                      require(digest((folder/n).read_bytes()) == hashes[n], 'Downloaded asset hash mismatch')
+                  return folder
+              retained = fetch(rows, old_assets, work/'original')
+              candidate = fetch(staged, new_assets, work/'candidate')
+              verify_bundle(old, retained); verify_bundle(new, candidate); guard()
+              new_rows, backups = {}, {}
+              def journal(phase, pending=None):
+                  receipt['journal'] = {'phase':phase,'pendingMutation':pending,'knownNewAssets':copy.deepcopy(new_rows),'knownBackups':copy.deepcopy(backups),'expectedAssets':copy.deepcopy(expected_rows)}
+                  receipt['interruptSignals'] = list(INTERRUPTS)
+                  record()
+              journal('verified-input-bundles')
+              names = [windows[0], 'SHA256SUMS', 'SHA256SUMS.sig']; committed = False
+              try:
+                  for i,n in enumerate(names):
+                      guard(); temp = 'replacement-' + run_id + '-new-' + str(i)
+                      path = work/temp; path.write_bytes((candidate/n).read_bytes())
+                      journal('upload-new-temporary',{'name':temp,'bytes':path.stat().st_size,'sha256':new_assets[n]})
+                      row = api.upload(rid, path); new_rows[n] = identity(row); expected_rows[temp] = identity(row)
+                      journal('new-temporary-observed'); guard()
+                  for i,n in enumerate(names):
+                      guard(); backup = 'replacement-' + run_id + '-old-' + str(i)
+                      journal('rename-old-backup',{'id':baseline[n]['id'],'from':n,'to':backup})
+                      row = api.rename(baseline[n]['id'], backup)
+                      require(row['id'] == baseline[n]['id'] and row['digest'] == baseline[n]['digest'], 'Backup identity changed')
+                      backups[n] = identity(row); expected_rows.pop(n); expected_rows[backup] = identity(row)
+                      journal('old-backup-observed'); guard()
+                      journal('rename-new-canonical',{'id':new_rows[n]['id'],'from':new_rows[n]['name'],'to':n})
+                      row = api.rename(new_rows[n]['id'], n)
+                      require(row['id'] == new_rows[n]['id'] and row['digest'] == new_rows[n]['digest'], 'Replacement identity changed')
+                      expected_rows.pop(new_rows[n]['name']); new_rows[n] = identity(row); expected_rows[n] = identity(row)
+                      journal('new-canonical-observed'); guard()
+                  current = guard()
+                  require(all(identity(current[n]) == baseline[n] for n in stable), 'An unchanged asset was replaced')
+                  journal('verify-canonical-ten-before-retirement')
+                  verify_bundle(new, fetch(current, new_assets, work/'verified-before-retirement'))
+                  for n,row in backups.items():
+                      guard(); journal('retire-owned-backup',{'id':row['id'],'name':row['name']})
+                      api.delete_asset(row['id']); expected_rows.pop(row['name'])
+                      journal('backup-retirement-observed'); guard()
+                  current = guard(); require(set(current) == set(new_assets), 'Temporary asset remains')
+                  journal('verify-final-ten')
+                  verify_bundle(new, fetch(current, new_assets, work/'published'))
+                  require(all(identity(current[n]) == baseline[n] for n in stable), 'Unchanged asset identity changed')
+                  committed = True
+                  receipt.update(status='VERIFIED_REPLACEMENT_STAGING_CLEANUP_PENDING',replacedAssets={n:identity(current[n]) for n in names},retainedAssets={n:identity(current[n]) for n in stable},allTenDownloadsVerified=True,unchangedSevenIDsAndHashes=True,referencesUnchanged=True)
+                  journal('replacement-verified'); guard(); check_draft()
+                  journal('delete-owned-draft',{'id':draft_id,'identity':draft_identity})
+                  api.delete_draft(draft_id)
+                  receipt['stagingDraftDeleted'] = True; journal('draft-deletion-observed')
+                  require(release_identity(api.release(rid)) == release and api.refs() == refs and api.latest() == latest and {n:identity(r) for n,r in asset_map(api.assets(rid)).items()} == expected_rows, 'Post-cleanup release changed')
+                  receipt.update(status='PASS',stagingDraftDeleted=True); record(); return receipt
+              except BaseException as error:
+                  receipt['failure'] = type(error).__name__
+                  receipt['failedPhase'] = copy.deepcopy(receipt.get('journal'))
+                  journal('rollback-or-cleanup-disposition')
+                  if not committed:
+                      try:
+                          require(release_identity(api.release(rid)) == release and api.refs() == refs and api.latest() == latest, 'Rollback release identity changed')
+                          current = asset_map(api.assets(rid))
+                          require(all(n in current and identity(current[n]) == baseline[n] for n in stable), 'Rollback unchanged assets changed')
+                          for n in names:
+                              live = current.get(n); owned = new_rows.get(n)
+                              if live and live['id'] != baseline[n]['id']:
+                                  require(owned and live['id'] == owned['id'] and live['digest'] == owned['digest'], 'Foreign replacement preserved')
+                                  journal('rollback-remove-owned-new',{'id':live['id'],'name':live['name']})
+                                  api.delete_asset(live['id']); current.pop(n)
+                              current = asset_map(api.assets(rid))
+                              prior = next((r for r in current.values() if r['id'] == baseline[n]['id']),None)
+                              if prior:
+                                  require(prior['digest'] == baseline[n]['digest'] and prior['name'] in (n,'replacement-'+run_id+'-old-'+str(names.index(n))), 'Foreign backup preserved')
+                                  if prior['name'] != n:
+                                      journal('rollback-restore-backup-name',{'id':prior['id'],'from':prior['name'],'to':n})
+                                      api.rename(prior['id'],n)
+                              elif n not in current:
+                                  journal('rollback-restore-retained-bytes',{'name':n,'sha256':old_assets[n]})
+                                  restored = api.upload(rid,retained/n)
+                                  receipt.setdefault('restoredPreviousAssets',{})[n] = identity(restored)
+                                  journal('rollback-restored-bytes-observed')
+                              else: require(current[n]['digest'] == baseline[n]['digest'], 'Foreign asset preserved')
+                          for n,owned in new_rows.items():
+                              current = asset_map(api.assets(rid))
+                              row = next((r for r in current.values() if r['id'] == owned['id']),None)
+                              if row:
+                                  require(row['digest'] == owned['digest'] and row['name'].startswith('replacement-'+run_id+'-new-'), 'Foreign temporary asset preserved')
+                                  journal('rollback-remove-owned-temporary',{'id':row['id'],'name':row['name']})
+                                  api.delete_asset(row['id'])
+                          current = asset_map(api.assets(rid)); require(set(current) == set(old_assets) and all(identity(current[n]) == baseline[n] for n in stable), 'Rollback inventory changed')
+                          verify_bundle(old,fetch(current,old_assets,work/'rollback'))
+                          receipt['rollbackVerified'] = True
+                      except BaseException as rollback:
+                          receipt['rollbackFailure'] = type(rollback).__name__
+                  receipt['status'] = 'FAIL' if not committed else 'VERIFIED_REPLACEMENT_STAGING_CLEANUP_PENDING'; record(); raise
+
+          def main():
+              install_interrupt_handlers()
+              require(os.environ['RELEASE_OPERATION'] == 'replace_windows' and os.environ['RELEASE_VERSION'] == '0.0.7' and os.environ['APPROVE_PUBLICATION'] == 'true' and os.environ['GITHUB_ACTOR'] == 'ozimellow', 'Exact correction approval required')
+              origin = ORIGINAL_V007.get(os.environ['GITHUB_REPOSITORY_ID']); require(origin is not None, 'Unapproved repository ID')
+              sid = os.environ['STAGING_RELEASE_ID']; require(re.fullmatch(r'[1-9][0-9]*',sid), 'Invalid staging ID')
+              expected = os.environ['EXPECTED_COMMIT']; require(subprocess.check_output(['git','rev-parse','HEAD']).decode().strip() == expected == os.environ['GITHUB_SHA'], 'Reviewed head changed')
+              tag_object = subprocess.check_output(['git','rev-parse','v0.0.7']).decode().strip()
+              tag_commit = subprocess.check_output(['git','rev-parse','v0.0.7^{commit}']).decode().strip()
+              old = parse(subprocess.check_output(['git','show','v0.0.7:releases/v0.0.7/release.json']))
+              require(old['manualAcceptance'] is False,'Original approval metadata changed'); old['manualAcceptance']=True
+              old_notes = subprocess.check_output(['git','show','v0.0.7:releases/v0.0.7/release.md'])
+              approved = Path(os.environ['RUNNER_TEMP'])/'approved-release'; new = parse((approved/'release.json').read_bytes())
+              def verify_bundle(metadata,folder):
+                  name = folder.parent/(folder.name+'-metadata'); name.mkdir()
+                  (name/'release.json').write_text(json.dumps(metadata)+'\n')
+                  (name/'release.md').write_bytes(old_notes if metadata is old else (approved/'release.md').read_bytes())
+                  subprocess.run([sys.executable,'.github/scripts/verify-release.py',str(name/'release.json'),str(folder)],check=True,timeout=300)
+              result=replace_windows(API(os.environ['GITHUB_REPOSITORY']),old,new,int(sid),expected,tag_object,tag_commit,os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT'],origin,Path(os.environ['RUNNER_TEMP'])/'windows-replacement',verify_bundle)
+              with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream: stream.write('Verified Windows package correction for v0.0.7. Seven other downloads and release references retained.\n')
+              print(json.dumps(result,sort_keys=True))
+
+          if __name__ == '__main__': main()
+          # replacement-transaction-source-end
+          PY
+      - name: Preserve previous verified downloads and correction receipt
+        if: always() && env.RELEASE_OPERATION == 'replace_windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-correction-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/windows-replacement/original/
+            ${{ runner.temp }}/windows-replacement/receipt.json
+          if-no-files-found: warn
+          retention-days: 30
